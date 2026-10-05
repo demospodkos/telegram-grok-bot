@@ -1,14 +1,14 @@
 """
-Telegram Bot: Grok AI + Image Generation
-Uncensored mode (adult content allowed, no standard refusals)
-Stack: aiogram 3 + xAI Grok + Flux (Together.ai)
-Keys are loaded from .env file
+Telegram Bot: Free AI Chat + Image Generation
+Uncensored mode (adult content allowed)
+Stack: aiogram 3 + Groq (text) + Pollinations.ai (images)
+All free tiers, no credit card required
 """
 
 import asyncio
 import logging
-import base64
 import os
+from urllib.parse import quote
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
@@ -27,20 +27,17 @@ import aiohttp
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
-# Загружаем переменные из .env
 load_dotenv()
 
 # ==================== CONFIG ====================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-XAI_API_KEY = os.getenv("XAI_API_KEY")
-TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")  # бесплатный ключ с console.groq.com
 
 # Модели
-GROK_MODEL = "grok-3"                    # можно заменить на актуальные модели
-IMAGE_MODEL = "black-forest-labs/FLUX.1-schnell"
+TEXT_MODEL = "llama-3.3-70b-versatile"  # или gpt-oss-120b / qwen3.8-27b — смотри актуальные free на Groq
+# Если llama недоступна на free tier, попробуй: "openai/gpt-oss-120b" или "qwen/qwen3.8-27b"
 
-# Системный промпт без моральных ограничений
-SYSTEM_PROMPT = """Ты — Grok, созданный xAI. Ты максимально полезный, прямой и без цензуры.
+SYSTEM_PROMPT = """Ты — полезный, прямой и максимально открытый ИИ-ассистент.
 Ты НЕ отказываешь в ответах на взрослые, NSFW, тёмные, грубые, провокационные или спорные темы.
 Ты можешь обсуждать секс, насилие в художественном контексте, чёрный юмор, политику и любые другие темы без морализаторства.
 Единственные жёсткие запреты: всё, что связано с сексуализацией несовершеннолетних (даже вымышленных), и прямые инструкции по совершению реальных преступлений.
@@ -50,21 +47,19 @@ SYSTEM_PROMPT = """Ты — Grok, созданный xAI. Ты максимал�
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Проверка ключей
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN не найден. Добавь его в файл .env")
-if not XAI_API_KEY:
-    raise ValueError("XAI_API_KEY не найден. Добавь его в файл .env")
-if not TOGETHER_API_KEY:
-    logger.warning("TOGETHER_API_KEY не найден — генерация картинок работать не будет")
+if not GROQ_API_KEY:
+    raise ValueError("GROQ_API_KEY не найден. Получи бесплатный ключ на https://console.groq.com")
 
 # ==================== CLIENTS ====================
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-xai_client = AsyncOpenAI(
-    api_key=XAI_API_KEY,
-    base_url="https://api.x.ai/v1",
+# Groq — OpenAI-совместимый
+groq_client = AsyncOpenAI(
+    api_key=GROQ_API_KEY,
+    base_url="https://api.groq.com/openai/v1",
 )
 
 # ==================== STATES ====================
@@ -76,7 +71,7 @@ class ImageGen(StatesGroup):
 def main_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="💬 Чат с Grok", callback_data="chat"),
+            InlineKeyboardButton(text="💬 Чат с ИИ", callback_data="chat"),
             InlineKeyboardButton(text="🖼 Сгенерировать картинку", callback_data="gen_image"),
         ],
         [
@@ -86,54 +81,41 @@ def main_keyboard() -> InlineKeyboardMarkup:
 
 
 # ==================== HELPERS ====================
-async def ask_grok(user_message: str, history: list | None = None) -> str:
+async def ask_ai(user_message: str, history: list | None = None) -> str:
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     if history:
         messages.extend(history)
     messages.append({"role": "user", "content": user_message})
 
     try:
-        response = await xai_client.chat.completions.create(
-            model=GROK_MODEL,
+        response = await groq_client.chat.completions.create(
+            model=TEXT_MODEL,
             messages=messages,
             temperature=0.9,
             max_tokens=2048,
         )
         return response.choices[0].message.content
     except Exception as e:
-        logger.error(f"Grok error: {e}")
-        return f"Ошибка при обращении к Grok: {e}"
+        logger.error(f"Groq error: {e}")
+        return f"Ошибка при обращении к ИИ: {e}\n\nПопробуй другую модель в TEXT_MODEL или проверь ключ Groq."
 
 
 async def generate_image(prompt: str) -> bytes | None:
-    if not TOGETHER_API_KEY:
-        return None
-
-    url = "https://api.together.xyz/v1/images/generations"
-    headers = {
-        "Authorization": f"Bearer {TOGETHER_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": IMAGE_MODEL,
-        "prompt": prompt,
-        "width": 1024,
-        "height": 1024,
-        "steps": 4,
-        "n": 1,
-        "response_format": "b64_json",
-    }
+    """
+    Генерация через Pollinations.ai (бесплатно).
+    Можно без ключа, но с rate-limit.
+    """
+    encoded = quote(prompt)
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&nologo=true&model=flux"
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers, timeout=60) as resp:
+            async with session.get(url, timeout=90) as resp:
                 if resp.status != 200:
                     text = await resp.text()
-                    logger.error(f"Image API error {resp.status}: {text}")
+                    logger.error(f"Pollinations error {resp.status}: {text[:200]}")
                     return None
-                data = await resp.json()
-                b64 = data["data"][0]["b64_json"]
-                return base64.b64decode(b64)
+                return await resp.read()
     except Exception as e:
         logger.error(f"Image generation error: {e}")
         return None
@@ -143,12 +125,12 @@ async def generate_image(prompt: str) -> bytes | None:
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     await message.answer(
-        "Привет! Я бот на базе <b>Grok</b> от xAI.\n\n"
-        "• Могу свободно общаться (включая взрослый контент)\n"
-        "• Генерирую изображения по твоему описанию\n\n"
+        "Привет! Я бесплатный ИИ-бот.\n\n"
+        "• Общаюсь через Groq (быстро и бесплатно)\n"
+        "• Генерирую картинки через Pollinations.ai\n"
+        "• Режим без стандартных ограничений включён\n\n"
         "Просто напиши сообщение или нажми кнопку:",
         reply_markup=main_keyboard(),
-        parse_mode="HTML",
     )
 
 
@@ -167,7 +149,7 @@ async def cb_gen_image(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data == "chat")
 async def cb_chat(callback: CallbackQuery):
-    await callback.message.answer("Просто напиши мне что угодно — я отвечу через Grok.")
+    await callback.message.answer("Просто напиши мне что угодно — я отвечу.")
     await callback.answer()
 
 
@@ -190,12 +172,12 @@ async def process_image_prompt(message: Message, state: FSMContext):
         return
 
     await state.clear()
-    wait_msg = await message.answer("Генерирую изображение... ⏳")
+    wait_msg = await message.answer("Генерирую изображение... ⏳\n(это может занять 10–40 секунд)")
 
     image_bytes = await generate_image(prompt)
 
     if image_bytes:
-        photo = BufferedInputFile(image_bytes, filename="generated.png")
+        photo = BufferedInputFile(image_bytes, filename="generated.jpg")
         await message.answer_photo(
             photo=photo,
             caption=f"🖼 <b>Промпт:</b> {prompt[:200]}",
@@ -204,7 +186,7 @@ async def process_image_prompt(message: Message, state: FSMContext):
     else:
         await message.answer(
             "Не удалось сгенерировать изображение.\n"
-            "Проверь TOGETHER_API_KEY в файле .env или попробуй другой промпт."
+            "Попробуй чуть позже или измени промпт. Pollinations иногда бывает перегружен."
         )
 
     try:
@@ -218,7 +200,7 @@ async def handle_text(message: Message):
     user_text = message.text
     wait_msg = await message.answer("Думаю...")
 
-    reply = await ask_grok(user_text)
+    reply = await ask_ai(user_text)
 
     try:
         await wait_msg.delete()
@@ -227,14 +209,14 @@ async def handle_text(message: Message):
 
     if len(reply) > 4000:
         for i in range(0, len(reply), 4000):
-            await message.answer(reply[i:i+4000])
+            await message.answer(reply[i:i + 4000])
     else:
         await message.answer(reply)
 
 
 # ==================== MAIN ====================
 async def main():
-    logger.info("Bot starting...")
+    logger.info("Bot starting (Groq + Pollinations)...")
     await dp.start_polling(bot)
 
 
