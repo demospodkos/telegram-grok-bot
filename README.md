@@ -9,15 +9,28 @@ Telegram-бот на базе **Grok (xAI)** с генерацией изобр�
 - Удобное меню с кнопками
 - Команды `/start` и `/image`
 
-## Быстрый старт
+## Где взять ключи
 
-### 1. Получи ключи
+### 1. Telegram Bot Token
+1. Открой [@BotFather](https://t.me/BotFather)
+2. Создай бота командой `/newbot` или возьми токен существующего
+3. Скопируй токен
 
-- **Telegram Bot Token** — у [@BotFather](https://t.me/BotFather)
-- **xAI API Key** — [console.x.ai](https://console.x.ai/)
-- **Together.ai API Key** — [api.together.xyz](https://api.together.xyz/) (для генерации картинок)
+### 2. xAI API Key (Grok)
+1. Зайди на [console.x.ai](https://console.x.ai)
+2. Зарегистрируйся / войди
+3. Перейди в раздел **API Keys**
+4. Создай новый ключ и сразу скопируй его (показывается только один раз)
+5. Обычно нужно добавить платёжный метод и кредиты
 
-### 2. Установка
+### 3. Together.ai API Key (картинки)
+1. Зайди на [api.together.ai](https://api.together.ai) или [together.ai](https://together.ai)
+2. Зарегистрируйся
+3. Перейди в Settings → API Keys
+4. Создай ключ и скопируй
+5. Обычно нужно пополнить баланс (минимум ~$5)
+
+## Установка
 
 ```bash
 git clone https://github.com/demospodkos/telegram-grok-bot.git
@@ -25,31 +38,27 @@ cd telegram-grok-bot
 pip install -r requirements.txt
 ```
 
-### 3. Настройка
+## Настройка
 
-Открой `bot.py` и замени:
-
-```python
-BOT_TOKEN = "ВАШ_ТОКЕН_ОТ_BOTFATHER"
-XAI_API_KEY = "ВАШ_XAI_API_KEY"
-TOGETHER_API_KEY = "ВАШ_TOGETHER_API_KEY"
+1. Скопируй пример файла окружения:
+```bash
+cp .env.example .env
 ```
 
-### 4. Запуск
+2. Открой файл `.env` и вставь свои ключи:
+```env
+BOT_TOKEN=твой_токен_от_BotFather
+XAI_API_KEY=твой_ключ_xAI
+TOGETHER_API_KEY=твой_ключ_Together.ai
+```
 
+3. Запусти бота:
 ```bash
 python bot.py
 ```
 
-Бот готов к работе.
+## Важно
 
-## Структура
-
-- `bot.py` — основной код
-- `requirements.txt` — зависимости
-
-## Примечания
-
-- Режим без цензуры включён по умолчанию в системном промпте.
-- Жёсткие запреты остаются только на контент с несовершеннолетними и прямые инструкции по реальным преступлениям.
-- Для продакшена лучше вынести ключи в `.env` и использовать `python-dotenv`.
+- Файл `.env` **не** должен попадать в GitHub
+- Никогда не публикуй свои ключи
+- Режим без цензуры включён по умолчанию
